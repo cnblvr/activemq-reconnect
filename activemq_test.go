@@ -38,6 +38,8 @@ func TestConnect(t *testing.T) {
 		return
 	}
 
+	t.Run("connect", func(t *testing.T) {})
+
 	t.Run("reconnect", func(t *testing.T) {
 		container.Stop()
 		container.Start()

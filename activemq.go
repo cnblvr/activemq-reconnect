@@ -189,10 +189,14 @@ func (amq *ActiveMQ) reconnect(ctx context.Context) error {
 
 	for iter := amq.failover.FirstURL(); iter.HasURL(); iter.Next() {
 		url := iter.URL()
-		conn, err = amq.dialContext(ctx, url.URL,
+		connOpts := []func(*stomp.Conn) error{
 			stomp.ConnOpt.HeartBeat(0, 0),
 			stomp.ConnOpt.Logger(&stompLogger{amq.log}),
-		)
+		}
+		if len(amq.options.login) > 0 {
+			connOpts = append(connOpts, stomp.ConnOpt.Login(amq.options.login, amq.options.passcode))
+		}
+		conn, err = amq.dialContext(ctx, url.URL, connOpts...)
 		if err != nil {
 			amq.log.Warnf("connect to %q error: %v", url.URL, err)
 		} else {

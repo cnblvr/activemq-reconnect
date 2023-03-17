@@ -9,6 +9,7 @@ type Option interface {
 type options struct {
 	failover              failover.Failover
 	failoverStr           string
+	login, passcode       string
 	log                   Logger
 	healthQueueNameOption string
 	queueSuffix           string
@@ -33,6 +34,17 @@ type failoverStrOption struct {
 }
 
 func (v failoverStrOption) apply(o *options) { o.failoverStr = v.failoverStr }
+
+// options :: auth
+
+func WithAuth(login, passcode string) Option { return authOption{login: login, passcode: passcode} }
+
+type authOption struct {
+	login    string
+	passcode string
+}
+
+func (v authOption) apply(o *options) { o.login, o.passcode = v.login, v.passcode }
 
 // options :: logger
 

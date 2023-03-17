@@ -77,7 +77,7 @@ func (o Options) MaxReconnectAttempts() int {
 
 func InfiniteReconnectAttempts(option int) int {
 	if option == -1 {
-		return math.MinInt64
+		return math.MaxInt64
 	}
 	return option
 }
