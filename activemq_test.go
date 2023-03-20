@@ -38,7 +38,11 @@ func TestConnect(t *testing.T) {
 		return
 	}
 
-	t.Run("connect", func(t *testing.T) {})
+	t.Run("connect", func(t *testing.T) {
+		t.Log(amq.Status())
+		t.Log(amq.Session())
+		t.Log(amq.Version())
+	})
 
 	t.Run("reconnect", func(t *testing.T) {
 		container.Stop()

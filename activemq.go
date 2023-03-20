@@ -64,6 +64,20 @@ func New(ctx context.Context, opts ...Option) (*ActiveMQ, error) {
 	return amq, nil
 }
 
+func (amq *ActiveMQ) Session() string {
+	if amq.getStatus() != StatusConnected {
+		return ""
+	}
+	return amq.conn.Session()
+}
+
+func (amq *ActiveMQ) Version() string {
+	if amq.getStatus() != StatusConnected {
+		return ""
+	}
+	return amq.conn.Server()
+}
+
 func (amq *ActiveMQ) WaitConnection(d time.Duration) error {
 	deadline := time.NewTimer(d)
 	ticker := time.NewTicker(time.Millisecond * 80)
