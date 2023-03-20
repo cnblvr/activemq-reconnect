@@ -16,6 +16,8 @@ type ConsumeMessage interface {
 	Decode(ctx context.Context, contentType string, r io.Reader) error
 }
 
+type ConsumeHandler func(ctx context.Context, message ConsumeMessage) error
+
 func newConsumeMessage(messageNil ConsumeMessage) ConsumeMessage {
 	return reflect.New(reflect.TypeOf(messageNil).Elem()).Interface().(ConsumeMessage)
 }
@@ -24,7 +26,7 @@ type subscriptionInfo struct {
 	queueName string
 }
 
-func (amq *ActiveMQ) Consume(ctx context.Context, messageNil ConsumeMessage, executeFn func(ctx context.Context, message ConsumeMessage) error) error {
+func (amq *ActiveMQ) Consume(ctx context.Context, messageNil ConsumeMessage, executeFn ConsumeHandler) error {
 	queueName := newConsumeMessage(messageNil).QueueName()
 	if queueName == amq.options.healthQueueNameOption {
 		return fmt.Errorf("the queue name can't be used as %q", queueName)
