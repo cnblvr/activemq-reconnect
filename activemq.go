@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	urlpkg "net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -257,9 +258,15 @@ func (amq *ActiveMQ) subscribeHealth() error {
 	return nil
 }
 
-func (amq *ActiveMQ) dialContext(ctx context.Context, addr string, opts ...func(*stomp.Conn) error) (*stomp.Conn, error) {
+func (amq *ActiveMQ) dialContext(ctx context.Context, url string, opts ...func(*stomp.Conn) error) (*stomp.Conn, error) {
 	dialer := net.Dialer{}
-	c, err := dialer.DialContext(ctx, "tcp", addr)
+
+	u, err := urlpkg.Parse(url)
+	if err != nil {
+		return nil, err
+	}
+
+	c, err := dialer.DialContext(ctx, u.Scheme, u.Host)
 	if err != nil {
 		return nil, err
 	}

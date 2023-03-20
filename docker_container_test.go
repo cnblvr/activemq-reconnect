@@ -50,7 +50,9 @@ func runContainerActiveMQ(t *testing.T, name string, portStomp, portFrontend str
 	contID, ok := runCommand(t, "docker", runArgs...)
 	if !ok {
 		// try removing the container and attempt again
+		cont.isRunning = true
 		cont.Kill()
+		cont.isRemoved = false
 		cont.Remove()
 		contID, ok = runCommand(t, "docker", runArgs...)
 		if !ok {

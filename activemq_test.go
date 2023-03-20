@@ -22,7 +22,7 @@ func TestConnect(t *testing.T) {
 
 	amq, err := New(ctx,
 		WithFailover(failover.New().
-			Add("localhost:"+container.portStomp).
+			Add("tcp://localhost:"+container.portStomp).
 			WithInitialReconnectDelay(time.Second).
 			WithMaxReconnectDelay(time.Second*2).
 			Build()),
@@ -122,7 +122,7 @@ func TestLostMessages(t *testing.T) {
 
 	amq, err := New(ctx,
 		WithFailover(failover.New().
-			Add("localhost:"+container.portStomp).
+			Add("tcp://localhost:"+container.portStomp).
 			WithInitialReconnectDelay(time.Second).
 			WithMaxReconnectDelay(time.Second*2).
 			Build()),
@@ -204,8 +204,8 @@ func TestDiversify(t *testing.T) {
 
 	amq, err := New(ctx,
 		WithFailover(failover.New().
-			Add("localhost:"+container1.portStomp).
-			Add("localhost:"+portStomp2).
+			Add("tcp://localhost:"+container1.portStomp).
+			Add("tcp://localhost:"+portStomp2).
 			WithRandomize(false).
 			WithInitialReconnectDelay(time.Second).
 			WithMaxReconnectDelay(time.Second*2).
