@@ -114,7 +114,7 @@ func (amq *ActiveMQ) subscribe(ctx context.Context, queueName string) error {
 		return fmt.Errorf("subscription %s already exists", queueName)
 	}
 
-	sub, err := amq.conn.Subscribe(queueName, stomp.AckAuto) //TODO ack
+	sub, err := amq.conn.Subscribe(queueName, stomp.AckClientIndividual) //TODO ack
 	if err != nil {
 		return err
 	}
