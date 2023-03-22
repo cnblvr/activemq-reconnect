@@ -38,7 +38,7 @@ func ExampleActiveMQ_Produce() {
 
 	// ... initialize ActiveMQ
 
-	if err := amq.Produce(ctx, &MyMessage{Text: "send it!"}); err != nil {
+	if err := amq.Produce(ctx, &MyMessage{Text: "send it!"}, activemq.WithRetryPolicy(10, time.Second*5)); err != nil {
 		panic(err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -70,8 +71,8 @@ func TestConnect(t *testing.T) {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			if err := amq.Consume(ctx, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage) error {
-				wg.Done()
-				cancel()
+				defer wg.Done()
+				defer cancel()
 				assert.Equal(t, want.Message, got.(*testMessage).Message)
 				return nil
 			}); err != nil {
@@ -194,6 +195,64 @@ func TestLostMessages(t *testing.T) {
 		}
 		<-time.NewTimer(time.Second).C
 	}
+}
+
+func TestRetries(t *testing.T) {
+	container := runContainerActiveMQ(t, "test_amq", "", "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	amq, err := New(ctx,
+		WithFailover(failover.New().
+			Add("tcp://localhost:"+container.portStomp).
+			WithInitialReconnectDelay(time.Second).
+			WithMaxReconnectDelay(time.Second*2).
+			Build()),
+		WithLogger(newTestLogger(t)),
+	)
+	if !assert.NoError(t, err) {
+		t.Fatal()
+	}
+
+	defer amq.Close(ctx)
+
+	if !checkStatus(t, amq, StatusConnected) {
+		return
+	}
+
+	want := newRandomTestMessage()
+	wantMaxTries, wantTryDelay := 3, time.Millisecond*500
+
+	gotMessages := new(int32)
+
+	// initialize a receiver
+	var wg sync.WaitGroup
+	wg.Add(wantMaxTries + 1)
+	go func(gotMessages *int32) {
+		if err := amq.Consume(ctx, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage) error {
+			defer wg.Done()
+			atomic.AddInt32(gotMessages, 1)
+			assert.Equal(t, want.Message, got.(*testMessage).Message)
+			return fmt.Errorf("test error")
+		}); err != nil {
+			t.Log(err)
+		}
+	}(gotMessages)
+
+	startTime := time.Now()
+
+	// send a message
+	if err := amq.Produce(ctx, want, WithRetryPolicy(wantMaxTries, wantTryDelay)); err != nil {
+		t.Fatal(err)
+	}
+
+	wg.Wait()
+	assert.LessOrEqual(t, wantTryDelay*time.Duration(wantMaxTries), time.Since(startTime))
+	assert.GreaterOrEqual(t, wantTryDelay*time.Duration(wantMaxTries)*2, time.Since(startTime))
+
+	<-time.NewTimer(time.Second).C
+	assert.Equal(t, wantMaxTries, int(atomic.LoadInt32(gotMessages))-1)
 }
 
 func TestDiversify(t *testing.T) {
