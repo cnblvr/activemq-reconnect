@@ -50,7 +50,7 @@ func ExampleActiveMQ_Consume_graceful_shutdown() {
 	// ... initialize ActiveMQ
 
 	go func() {
-		if err := amq.Consume(ctx, (*MyMessage)(nil), func(_ context.Context, message activemq.ConsumeMessage) error {
+		if err := amq.Consume(ctx, (*MyMessage)(nil), func(_ context.Context, message activemq.ConsumeMessage, _ activemq.Headers) error {
 			msg := message.(*MyMessage)
 			if msg.Text == "send it!" {
 				fmt.Print("awesome!")
@@ -68,13 +68,30 @@ func ExampleActiveMQ_Consume_once() {
 
 	// ... initialize ActiveMQ
 
-	if err := amq.Consume(ctx, (*MyMessage)(nil), func(_ context.Context, message activemq.ConsumeMessage) error {
+	if err := amq.Consume(ctx, (*MyMessage)(nil), func(_ context.Context, message activemq.ConsumeMessage, _ activemq.Headers) error {
 		msg := message.(*MyMessage)
 		if msg.Text == "send it!" {
 			fmt.Print("awesome!")
 		}
 		return nil
 	}); err != nil {
+		panic(err)
+	}
+}
+
+func ExampleWithHeader() {
+	go func() {
+		if err := amq.Consume(context.Background(), (*MyMessage)(nil), func(_ context.Context, message activemq.ConsumeMessage, headers activemq.Headers) error {
+			if v, _ := headers.Get("with"); v == "header" {
+				fmt.Print("awesome!")
+			}
+			return nil
+		}); err != nil {
+			panic(err)
+		}
+	}()
+
+	if err := amq.Produce(context.Background(), &MyMessage{Text: "send it!"}, activemq.WithHeader("with", "header")); err != nil {
 		panic(err)
 	}
 }

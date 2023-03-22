@@ -55,7 +55,7 @@ func TestConnect(t *testing.T) {
 	})
 
 	t.Run("consume health", func(t *testing.T) {
-		err = amq.Consume(ctx, (*healthQueue)(nil), func(ctx context.Context, got ConsumeMessage) error {
+		err = amq.Consume(ctx, (*healthQueue)(nil), func(_ context.Context, _ ConsumeMessage, _ Headers) error {
 			return nil
 		})
 		assert.Error(t, err)
@@ -64,16 +64,27 @@ func TestConnect(t *testing.T) {
 	t.Run("send and receive", func(t *testing.T) {
 		want := newRandomTestMessage()
 
+		wantHeaders := Headers{
+			"multiple": "I'm not alone",
+			"empty":    "",
+		}
+		const wantSingleHeaderKey, wantSingleHeaderValue = "reqid", "123456"
+
 		// initialize a receiver
 		var wg sync.WaitGroup
 		wg.Add(1)
 		go func() {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			if err := amq.Consume(ctx, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage) error {
+			if err := amq.Consume(ctx, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage, headers Headers) error {
 				defer wg.Done()
 				defer cancel()
 				assert.Equal(t, want.Message, got.(*testMessage).Message)
+
+				for key, value := range wantHeaders {
+					assert.Equal(t, value, headers[key])
+				}
+				assert.Equal(t, wantSingleHeaderValue, headers[wantSingleHeaderKey])
 				return nil
 			}); err != nil {
 				t.Fatal(err)
@@ -81,7 +92,10 @@ func TestConnect(t *testing.T) {
 		}()
 
 		// send a message
-		if err := amq.Produce(ctx, want); err != nil {
+		if err := amq.Produce(ctx, want,
+			WithHeader(wantSingleHeaderKey, wantSingleHeaderValue),
+			WithHeaders(wantHeaders),
+		); err != nil {
 			t.Fatal(err)
 		}
 
@@ -148,7 +162,7 @@ func TestLostMessages(t *testing.T) {
 	// initialize a receiver
 	go func() {
 		defer cancel()
-		if err := amq.Consume(ctxReceiver, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage) error {
+		if err := amq.Consume(ctxReceiver, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage, headers Headers) error {
 			messages.Delete(got.(*testMessage).Message)
 			return nil
 		}); err != nil {
@@ -224,16 +238,19 @@ func TestRetries(t *testing.T) {
 	want := newRandomTestMessage()
 	wantMaxTries, wantTryDelay := 3, time.Millisecond*500
 
+	const wantHeaderKey, wantHeaderValue = "key", "value"
+
 	gotMessages := new(int32)
 
 	// initialize a receiver
 	var wg sync.WaitGroup
 	wg.Add(wantMaxTries + 1)
 	go func(gotMessages *int32) {
-		if err := amq.Consume(ctx, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage) error {
+		if err := amq.Consume(ctx, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage, headers Headers) error {
 			defer wg.Done()
 			atomic.AddInt32(gotMessages, 1)
 			assert.Equal(t, want.Message, got.(*testMessage).Message)
+			assert.Equal(t, wantHeaderValue, headers[wantHeaderKey])
 			return fmt.Errorf("test error")
 		}); err != nil {
 			t.Log(err)
@@ -243,7 +260,10 @@ func TestRetries(t *testing.T) {
 	startTime := time.Now()
 
 	// send a message
-	if err := amq.Produce(ctx, want, WithRetryPolicy(wantMaxTries, wantTryDelay)); err != nil {
+	if err := amq.Produce(ctx, want,
+		WithRetryPolicy(wantMaxTries, wantTryDelay),
+		WithHeader(wantHeaderKey, wantHeaderValue),
+	); err != nil {
 		t.Fatal(err)
 	}
 

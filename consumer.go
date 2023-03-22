@@ -19,7 +19,7 @@ type ConsumeMessage interface {
 	Decode(ctx context.Context, contentType string, r io.Reader) error
 }
 
-type ConsumeHandler func(ctx context.Context, message ConsumeMessage) error
+type ConsumeHandler func(ctx context.Context, message ConsumeMessage, headers Headers) error
 
 func newConsumeMessage(messageNil ConsumeMessage) ConsumeMessage {
 	return reflect.New(reflect.TypeOf(messageNil).Elem()).Interface().(ConsumeMessage)
@@ -81,9 +81,17 @@ func (amq *ActiveMQ) Consume(ctx context.Context, messageNil ConsumeMessage, exe
 				amq.log.Errorf("message %q decode error: %v", queueName, err)
 				continue
 			}
-			err := executeFn(ctx, message)
+			udHeaders := make(Headers)
+			for i := 0; i < stompMessage.Header.Len(); i++ {
+				key, value := stompMessage.Header.GetAt(i)
+				if !strings.HasPrefix(key, userDefinedPrefix) {
+					continue
+				}
+				udHeaders.Set(strings.TrimPrefix(key, userDefinedPrefix), value)
+			}
+			err := executeFn(ctx, message, udHeaders)
 			if err != nil {
-				if !amq.retryMessage(stompMessage, message) {
+				if !amq.retryMessage(stompMessage, message, udHeaders) {
 					nackErr := amq.conn.Nack(stompMessage)
 					if nackErr != nil {
 						amq.log.Errorf("message %q Nack error: %v. Orig error: %v", queueName, nackErr, err)
@@ -114,7 +122,7 @@ const (
 	amqScheduledDelayHeader = "AMQ_SCHEDULED_DELAY"
 )
 
-func (amq *ActiveMQ) retryMessage(stompMessage *stomp.Message, message ConsumeMessage) bool {
+func (amq *ActiveMQ) retryMessage(stompMessage *stomp.Message, message ConsumeMessage, udHeaders Headers) bool {
 	var rp retryPolicy
 	if h := stompMessage.Header.Get(retryPolicyHeader); len(h) != 0 {
 		if err := rp.UnmarshalText([]byte(h)); err != nil {
@@ -142,12 +150,8 @@ func (amq *ActiveMQ) retryMessage(stompMessage *stomp.Message, message ConsumeMe
 	retryNo++
 
 	sendOpts := make([]func(*frame.Frame) error, 0, stompMessage.Header.Len())
-	for i := 0; i < stompMessage.Header.Len(); i++ {
-		key, value := stompMessage.Header.GetAt(i)
-		if !strings.HasPrefix(key, userDefinedPrefix) {
-			continue
-		}
-		sendOpts = append(sendOpts, stomp.SendOpt.Header(key, value))
+	for key, value := range udHeaders {
+		sendOpts = append(sendOpts, stomp.SendOpt.Header(userDefinedPrefix+key, value))
 	}
 	sendOpts = append(sendOpts, stomp.SendOpt.Header(retryNoHeader, strconv.Itoa(retryNo)))
 	sendOpts = append(sendOpts, stomp.SendOpt.Header(amqScheduledDelayHeader, strconv.FormatInt(rp.tryDelay.Milliseconds(), 10)))
@@ -203,4 +207,15 @@ func (amq *ActiveMQ) unsubscribe(ctx context.Context, queueName string) error {
 	}
 
 	return nil
+}
+
+type Headers map[string]string
+
+func (h Headers) Get(key string) (string, bool) {
+	v, ok := h[key]
+	return v, ok
+}
+
+func (h Headers) Set(key, value string) {
+	h[key] = value
 }

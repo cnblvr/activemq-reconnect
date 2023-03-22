@@ -102,3 +102,35 @@ func (v retryPolicy) apply(o *produceOptions) {
 		o.Headers[retryPolicyHeader] = string(text)
 	}
 }
+
+// ProduceOption :: Header
+
+func WithHeader(key, value string) ProduceOption {
+	return headerProduceOption{
+		key:   key,
+		value: value,
+	}
+}
+
+type headerProduceOption struct {
+	key   string
+	value string
+}
+
+func (v headerProduceOption) apply(o *produceOptions) {
+	o.Headers[userDefinedPrefix+v.key] = v.value
+}
+
+// ProduceOption :: Headers
+
+func WithHeaders(h Headers) ProduceOption {
+	return headersProduceOption(h)
+}
+
+type headersProduceOption Headers
+
+func (v headersProduceOption) apply(o *produceOptions) {
+	for key, value := range v {
+		o.Headers[userDefinedPrefix+key] = value
+	}
+}
