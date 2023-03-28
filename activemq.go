@@ -32,14 +32,14 @@ func New(ctx context.Context, opts ...Option) (*ActiveMQ, error) {
 	amq.setStatus(StatusConnecting)
 
 	amq.options = &options{
-		log:                   &emptyLogger{},
-		healthQueueNameOption: "health",
+		log:             &emptyLogger{},
+		healthQueueName: "health",
 	}
 	for _, opt := range opts {
 		opt.apply(amq.options)
 	}
 
-	if amq.options.healthQueueNameOption == "" {
+	if amq.options.healthQueueName == "" {
 		return nil, fmt.Errorf("health queue name is empty")
 	}
 
@@ -249,7 +249,7 @@ func (amq *ActiveMQ) reconnect(ctx context.Context) error {
 }
 
 func (amq *ActiveMQ) subscribeHealth() error {
-	queueName := amq.withQueueSuffix(amq.options.healthQueueNameOption)
+	queueName := amq.withQueueSuffix(amq.options.healthQueueName)
 	sub, err := amq.conn.Subscribe(queueName, stomp.AckAuto)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to %q: %v", queueName, err)

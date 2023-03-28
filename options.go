@@ -7,12 +7,12 @@ type Option interface {
 }
 
 type options struct {
-	failover              failover.Failover
-	failoverStr           string
-	login, passcode       string
-	log                   Logger
-	healthQueueNameOption string
-	queueSuffix           string
+	failover        failover.Failover
+	failoverStr     string
+	login, passcode string
+	log             Logger
+	healthQueueName string
+	queueSuffix     string
 }
 
 // options :: failover object
@@ -62,7 +62,7 @@ func WithHealthQueueName(name string) Option { return healthQueueNameOption(name
 
 type healthQueueNameOption string
 
-func (v healthQueueNameOption) apply(o *options) { o.healthQueueNameOption = string(v) }
+func (v healthQueueNameOption) apply(o *options) { o.healthQueueName = string(v) }
 
 // options :: queue name suffix
 

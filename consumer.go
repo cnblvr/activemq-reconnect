@@ -31,7 +31,7 @@ type subscriptionInfo struct {
 
 func (amq *ActiveMQ) Consume(ctx context.Context, messageNil ConsumeMessage, executeFn ConsumeHandler) error {
 	queueName := newConsumeMessage(messageNil).QueueName()
-	if queueName == amq.options.healthQueueNameOption {
+	if queueName == amq.options.healthQueueName {
 		return fmt.Errorf("the queue name can't be used as %q", queueName)
 	}
 	queueName = amq.withQueueSuffix(queueName)
