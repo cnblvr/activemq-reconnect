@@ -19,6 +19,8 @@ type ActiveMQ struct {
 	health *stomp.Subscription
 
 	status            uint32
+	connectionType    uint32
+	connTypeOnce      sync.Once
 	reconnectMx       sync.Mutex
 	subscriptions     sync.Map
 	subscriptionsInfo sync.Map
@@ -41,6 +43,9 @@ func New(ctx context.Context, opts ...Option) (*ActiveMQ, error) {
 
 	if amq.options.healthQueueName == "" {
 		return nil, fmt.Errorf("health queue name is empty")
+	}
+	if amq.options.connectionType != ConnectionTypeUnknown {
+		amq.setConnectionType(amq.options.connectionType)
 	}
 
 	// parse the failoverStr or clone the failover from options
@@ -126,6 +131,46 @@ func (amq *ActiveMQ) Status() Status { return amq.getStatus() }
 
 func (amq *ActiveMQ) getStatus() Status  { return Status(atomic.LoadUint32(&amq.status)) }
 func (amq *ActiveMQ) setStatus(s Status) { atomic.StoreUint32(&amq.status, uint32(s)) }
+
+type ConnectionType uint32
+
+const (
+	ConnectionTypeUnknown ConnectionType = iota
+	ConnectionTypeConsumer
+	ConnectionTypeProducer
+)
+
+const _connectionTypeString = "UnknownConsumerProducer"
+
+var _connectionTypeMap = map[ConnectionType]string{
+	ConnectionTypeUnknown:  _connectionTypeString[0:7],
+	ConnectionTypeConsumer: _connectionTypeString[7:15],
+	ConnectionTypeProducer: _connectionTypeString[15:23],
+}
+
+func (ct ConnectionType) String() string {
+	str, ok := _connectionTypeMap[ct]
+	if !ok {
+		return _connectionTypeMap[ConnectionTypeUnknown]
+	}
+	return str
+}
+
+func (amq *ActiveMQ) ConnectionType() ConnectionType { return amq.getConnectionType() }
+
+func (amq *ActiveMQ) getConnectionType() ConnectionType {
+	return ConnectionType(atomic.LoadUint32(&amq.connectionType))
+}
+
+// return false if connection type could not be defined
+func (amq *ActiveMQ) setConnectionType(ct ConnectionType) bool {
+	if connType := amq.getConnectionType(); connType == ConnectionTypeUnknown {
+		amq.connTypeOnce.Do(func() {
+			atomic.StoreUint32(&amq.connectionType, uint32(ct))
+		})
+	}
+	return amq.getConnectionType() == ct
+}
 
 func (amq *ActiveMQ) checkHealth(ctx context.Context) {
 	healthTicker := time.NewTicker(time.Millisecond * 100)

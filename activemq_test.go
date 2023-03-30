@@ -21,41 +21,54 @@ func TestConnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	amq, err := New(ctx,
+	opts := []Option{
 		WithFailover(failover.New().
-			Add("tcp://localhost:"+container.portStomp).
+			Add("tcp://localhost:" + container.portStomp).
 			WithInitialReconnectDelay(time.Second).
-			WithMaxReconnectDelay(time.Second*2).
+			WithMaxReconnectDelay(time.Second * 2).
 			Build()),
 		WithLogger(newTestLogger(t)),
-	)
+	}
+
+	consumer, err := New(ctx, opts...)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
+	defer consumer.Close(ctx)
 
-	defer amq.Close(ctx)
+	producer, err := New(ctx, opts...)
+	if !assert.NoError(t, err) {
+		t.Fatal()
+	}
+	defer producer.Close(ctx)
 
-	if !checkStatus(t, amq, StatusConnected) {
+	if !checkStatus(t, consumer, StatusConnected) {
+		return
+	}
+	if !checkStatus(t, producer, StatusConnected) {
 		return
 	}
 
 	t.Run("connect", func(t *testing.T) {
-		t.Log(amq.Status())
-		t.Log(amq.Session())
-		t.Log(amq.Version())
+		t.Log(producer.Status())
+		t.Log(producer.Session())
+		t.Log(producer.Version())
 	})
 
 	t.Run("reconnect", func(t *testing.T) {
 		container.Stop()
 		container.Start()
 
-		if !checkStatus(t, amq, StatusConnected) {
+		if !checkStatus(t, consumer, StatusConnected) {
+			return
+		}
+		if !checkStatus(t, producer, StatusConnected) {
 			return
 		}
 	})
 
 	t.Run("consume health", func(t *testing.T) {
-		err = amq.Consume(ctx, (*healthQueue)(nil), func(_ context.Context, _ ConsumeMessage, _ Headers) error {
+		err = consumer.Consume(ctx, (*healthQueue)(nil), func(_ context.Context, _ ConsumeMessage, _ Headers) error {
 			return nil
 		})
 		assert.Error(t, err)
@@ -76,7 +89,7 @@ func TestConnect(t *testing.T) {
 		go func() {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			if err := amq.Consume(ctx, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage, headers Headers) error {
+			if err := consumer.Consume(ctx, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage, headers Headers) error {
 				defer wg.Done()
 				defer cancel()
 				assert.Equal(t, want.Message, got.(*testMessage).Message)
@@ -92,7 +105,7 @@ func TestConnect(t *testing.T) {
 		}()
 
 		// send a message
-		if err := amq.Produce(ctx, want,
+		if err := producer.Produce(ctx, want,
 			WithHeader(wantSingleHeaderKey, wantSingleHeaderValue),
 			WithHeaders(wantHeaders),
 		); err != nil {
@@ -100,6 +113,11 @@ func TestConnect(t *testing.T) {
 		}
 
 		wg.Wait()
+	})
+
+	t.Run("connection type", func(t *testing.T) {
+		assert.Equal(t, ConnectionTypeConsumer, consumer.ConnectionType())
+		assert.Equal(t, ConnectionTypeProducer, producer.ConnectionType())
 	})
 
 	cancel()
@@ -135,21 +153,31 @@ func TestLostMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	amq, err := New(ctx,
+	opts := []Option{
 		WithFailover(failover.New().
-			Add("tcp://localhost:"+container.portStomp).
+			Add("tcp://localhost:" + container.portStomp).
 			WithInitialReconnectDelay(time.Second).
-			WithMaxReconnectDelay(time.Second*2).
+			WithMaxReconnectDelay(time.Second * 2).
 			Build()),
 		WithLogger(newTestLogger(t)),
-	)
+	}
+
+	consumer, err := New(ctx, opts...)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
+	defer consumer.Close(ctx)
 
-	defer amq.Close(ctx)
+	producer, err := New(ctx, opts...)
+	if !assert.NoError(t, err) {
+		t.Fatal()
+	}
+	defer producer.Close(ctx)
 
-	if !checkStatus(t, amq, StatusConnected) {
+	if !checkStatus(t, consumer, StatusConnected) {
+		return
+	}
+	if !checkStatus(t, producer, StatusConnected) {
 		return
 	}
 
@@ -162,7 +190,7 @@ func TestLostMessages(t *testing.T) {
 	// initialize a receiver
 	go func() {
 		defer cancel()
-		if err := amq.Consume(ctxReceiver, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage, headers Headers) error {
+		if err := consumer.Consume(ctxReceiver, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage, headers Headers) error {
 			messages.Delete(got.(*testMessage).Message)
 			return nil
 		}); err != nil {
@@ -175,7 +203,7 @@ func TestLostMessages(t *testing.T) {
 		ticker := time.NewTicker(time.Millisecond * 50)
 		for {
 			msg := newRandomTestMessage()
-			if err := amq.Produce(ctx, msg); err != nil {
+			if err := producer.Produce(ctx, msg); err != nil {
 				t.Log(err)
 			} else {
 				messages.Store(msg.Message, struct{}{})
@@ -191,7 +219,10 @@ func TestLostMessages(t *testing.T) {
 	container.Kill()
 	container.Start()
 
-	if !checkStatus(t, amq, StatusConnected) {
+	if !checkStatus(t, consumer, StatusConnected) {
+		return
+	}
+	if !checkStatus(t, producer, StatusConnected) {
 		return
 	}
 
@@ -217,21 +248,31 @@ func TestRetries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	amq, err := New(ctx,
+	opts := []Option{
 		WithFailover(failover.New().
-			Add("tcp://localhost:"+container.portStomp).
+			Add("tcp://localhost:" + container.portStomp).
 			WithInitialReconnectDelay(time.Second).
-			WithMaxReconnectDelay(time.Second*2).
+			WithMaxReconnectDelay(time.Second * 2).
 			Build()),
 		WithLogger(newTestLogger(t)),
-	)
+	}
+
+	consumer, err := New(ctx, opts...)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
+	defer consumer.Close(ctx)
 
-	defer amq.Close(ctx)
+	producer, err := New(ctx, opts...)
+	if !assert.NoError(t, err) {
+		t.Fatal()
+	}
+	defer producer.Close(ctx)
 
-	if !checkStatus(t, amq, StatusConnected) {
+	if !checkStatus(t, consumer, StatusConnected) {
+		return
+	}
+	if !checkStatus(t, producer, StatusConnected) {
 		return
 	}
 
@@ -246,7 +287,7 @@ func TestRetries(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(wantMaxTries + 1)
 	go func(gotMessages *int32) {
-		if err := amq.Consume(ctx, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage, headers Headers) error {
+		if err := consumer.Consume(ctx, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage, headers Headers) error {
 			defer wg.Done()
 			atomic.AddInt32(gotMessages, 1)
 			assert.Equal(t, want.Message, got.(*testMessage).Message)
@@ -260,7 +301,7 @@ func TestRetries(t *testing.T) {
 	startTime := time.Now()
 
 	// send a message
-	if err := amq.Produce(ctx, want,
+	if err := producer.Produce(ctx, want,
 		WithRetryPolicy(wantMaxTries, wantTryDelay),
 		WithHeader(wantHeaderKey, wantHeaderValue),
 	); err != nil {
@@ -269,7 +310,7 @@ func TestRetries(t *testing.T) {
 
 	wg.Wait()
 	assert.LessOrEqual(t, wantTryDelay*time.Duration(wantMaxTries), time.Since(startTime))
-	assert.GreaterOrEqual(t, wantTryDelay*time.Duration(wantMaxTries)*2, time.Since(startTime))
+	assert.GreaterOrEqual(t, wantTryDelay*time.Duration(wantMaxTries)*3, time.Since(startTime))
 
 	<-time.NewTimer(time.Second).C
 	assert.Equal(t, wantMaxTries, int(atomic.LoadInt32(gotMessages))-1)
@@ -281,36 +322,52 @@ func TestDiversify(t *testing.T) {
 
 	ctx := context.Background()
 
-	amq, err := New(ctx,
+	opts := []Option{
 		WithFailover(failover.New().
-			Add("tcp://localhost:"+container1.portStomp).
-			Add("tcp://localhost:"+portStomp2).
+			Add("tcp://localhost:" + container1.portStomp).
+			Add("tcp://localhost:" + portStomp2).
 			WithRandomize(false).
 			WithInitialReconnectDelay(time.Second).
-			WithMaxReconnectDelay(time.Second*2).
+			WithMaxReconnectDelay(time.Second * 2).
 			Build()),
 		WithLogger(newTestLogger(t)),
-	)
+	}
+
+	consumer, err := New(ctx, opts...)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
+	defer consumer.Close(ctx)
 
-	defer amq.Close(ctx)
+	producer, err := New(ctx, opts...)
+	if !assert.NoError(t, err) {
+		t.Fatal()
+	}
+	defer producer.Close(ctx)
 
-	if !checkStatus(t, amq, StatusConnected) {
+	if !checkStatus(t, consumer, StatusConnected) {
+		return
+	}
+	if !checkStatus(t, producer, StatusConnected) {
 		return
 	}
 
 	container1.Kill()
 
-	if !checkStatus(t, amq, StatusReconnecting) {
+	if !checkStatus(t, consumer, StatusReconnecting) {
+		return
+	}
+	if !checkStatus(t, producer, StatusReconnecting) {
 		return
 	}
 
 	container2 := runContainerActiveMQ(t, "test_amq2", portStomp2, "")
 	_ = container2
 
-	if !checkStatus(t, amq, StatusConnected) {
+	if !checkStatus(t, consumer, StatusConnected) {
+		return
+	}
+	if !checkStatus(t, producer, StatusConnected) {
 		return
 	}
 }

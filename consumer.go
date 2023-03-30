@@ -30,6 +30,9 @@ type subscriptionInfo struct {
 }
 
 func (amq *ActiveMQ) Consume(ctx context.Context, messageNil ConsumeMessage, executeFn ConsumeHandler) error {
+	if !amq.setConnectionType(ConnectionTypeConsumer) {
+		return fmt.Errorf("this connection (%s) is not for consumption. Use a different connection", amq.getConnectionType())
+	}
 	queueName := newConsumeMessage(messageNil).QueueName()
 	if queueName == amq.options.healthQueueName {
 		return fmt.Errorf("the queue name can't be used as %q", queueName)

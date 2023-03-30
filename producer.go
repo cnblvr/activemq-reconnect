@@ -23,6 +23,9 @@ const (
 )
 
 func (amq *ActiveMQ) Produce(ctx context.Context, message ProduceMessage, opts ...ProduceOption) error {
+	if !amq.setConnectionType(ConnectionTypeProducer) {
+		return fmt.Errorf("this connection (%s) is not for production. Use a different connection", amq.getConnectionType())
+	}
 	if status := amq.getStatus(); status != StatusConnected {
 		return fmt.Errorf("ActiveMQ has the status %s", status.String())
 	}

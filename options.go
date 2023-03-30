@@ -13,6 +13,7 @@ type options struct {
 	log             Logger
 	healthQueueName string
 	queueSuffix     string
+	connectionType  ConnectionType
 }
 
 // options :: failover object
@@ -71,3 +72,11 @@ func WithQueueSuffix(suffix string) Option { return queueSuffixOption(suffix) }
 type queueSuffixOption string
 
 func (v queueSuffixOption) apply(o *options) { o.queueSuffix = string(v) }
+
+// options :: connection type
+
+func WithConnectionType(connType ConnectionType) Option { return connectionTypeOption(connType) }
+
+type connectionTypeOption ConnectionType
+
+func (v connectionTypeOption) apply(o *options) { o.connectionType = ConnectionType(v) }
