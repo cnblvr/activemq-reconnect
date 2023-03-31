@@ -11,6 +11,7 @@ import (
 
 	"github.com/cnblvr/activemq-reconnect/failover"
 	"github.com/go-stomp/stomp/v3"
+	"github.com/go-stomp/stomp/v3/frame"
 )
 
 type ActiveMQ struct {
@@ -281,7 +282,7 @@ func (amq *ActiveMQ) reconnect(ctx context.Context) error {
 	amq.subscriptionsInfo.Range(func(queueName, subInfoAny interface{}) bool {
 		subInfo := subInfoAny.(subscriptionInfo)
 		if err := amq.subscribe(ctx, subInfo.queueName); err != nil {
-			subscribeErr = fmt.Errorf("failed to subscribe to %q queue: %v", subInfo.queueName, err)
+			subscribeErr = fmt.Errorf("failed to resubscribe to %q queue: %v", subInfo.queueName, err)
 			return false
 		}
 		return true
@@ -341,7 +342,7 @@ func (amq *ActiveMQ) close(ctx context.Context) error {
 	amq.subscriptions.Range(func(queueName, subAny interface{}) bool {
 		sub := subAny.(*stomp.Subscription)
 		if err := sub.Unsubscribe(); err != nil {
-			amq.log.Debugf("failed to subscribe to %q queue: %v", sub.Destination(), err)
+			amq.log.Debugf("failed to unsubscribe to %q queue: %v", sub.Destination(), err)
 			return false
 		}
 		return true
@@ -369,4 +370,28 @@ func (amq *ActiveMQ) withQueueSuffix(queueName string) string {
 		return queueName
 	}
 	return fmt.Sprintf("%s_%s", queueName, amq.options.queueSuffix)
+}
+
+func (amq *ActiveMQ) ack(m *stomp.Message) error {
+	if status := amq.getStatus(); status != StatusConnected {
+		return fmt.Errorf("failed to ack: connection has status %s", status)
+	}
+	return amq.conn.Ack(m)
+}
+
+func (amq *ActiveMQ) nack(m *stomp.Message) error {
+	if status := amq.getStatus(); status != StatusConnected {
+		return fmt.Errorf("failed to nack: connection has status %s", status)
+	}
+	return amq.conn.Nack(m)
+}
+
+func (amq *ActiveMQ) send(destination string, contentType string, body []byte, opts ...func(*frame.Frame) error) error {
+	if status := amq.getStatus(); status != StatusConnected {
+		return fmt.Errorf("failed to send: connection has status %s", status)
+	}
+	if !amq.options.notPersistent {
+		opts = append(opts, stomp.SendOpt.Header("persistent", "true"))
+	}
+	return amq.conn.Send(destination, contentType, body, opts...)
 }

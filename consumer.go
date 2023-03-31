@@ -95,7 +95,7 @@ func (amq *ActiveMQ) Consume(ctx context.Context, messageNil ConsumeMessage, exe
 			err := executeFn(ctx, message, udHeaders)
 			if err != nil {
 				if !amq.retryMessage(stompMessage, message, udHeaders) {
-					nackErr := amq.conn.Nack(stompMessage)
+					nackErr := amq.nack(stompMessage)
 					if nackErr != nil {
 						amq.log.Errorf("message %q Nack error: %v. Orig error: %v", queueName, nackErr, err)
 					} else {
@@ -106,7 +106,7 @@ func (amq *ActiveMQ) Consume(ctx context.Context, messageNil ConsumeMessage, exe
 				// ack message because it was resent
 			}
 			if stompMessage.ShouldAck() {
-				ackErr := amq.conn.Ack(stompMessage)
+				ackErr := amq.ack(stompMessage)
 				if ackErr != nil {
 					amq.log.Errorf("message %q Ack error: %v", queueName, ackErr)
 				} else {
@@ -158,7 +158,7 @@ func (amq *ActiveMQ) retryMessage(stompMessage *stomp.Message, message ConsumeMe
 	}
 	sendOpts = append(sendOpts, stomp.SendOpt.Header(retryNoHeader, strconv.Itoa(retryNo)))
 	sendOpts = append(sendOpts, stomp.SendOpt.Header(amqScheduledDelayHeader, strconv.FormatInt(rp.tryDelay.Milliseconds(), 10)))
-	if err := amq.conn.Send(stompMessage.Destination, stompMessage.ContentType, stompMessage.Body, sendOpts...); err != nil {
+	if err := amq.send(stompMessage.Destination, stompMessage.ContentType, stompMessage.Body, sendOpts...); err != nil {
 		amq.log.Errorf("failed to resend message %q", stompMessage.Destination)
 		return false
 	}

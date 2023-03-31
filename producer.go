@@ -48,7 +48,7 @@ func (amq *ActiveMQ) Produce(ctx context.Context, message ProduceMessage, opts .
 		sendOpts = append(sendOpts, stomp.SendOpt.Header(key, value))
 	}
 	queueName := amq.withQueueSuffix(message.QueueName())
-	if err := amq.conn.Send(queueName, contentType, buf.Bytes(), sendOpts...); err != nil {
+	if err := amq.send(queueName, contentType, buf.Bytes(), sendOpts...); err != nil {
 		return err
 	}
 	amq.log.Debugf("send message %q", queueName)

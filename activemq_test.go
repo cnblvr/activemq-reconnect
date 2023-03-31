@@ -21,22 +21,25 @@ func TestConnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	opts := []Option{
-		WithFailover(failover.New().
-			Add("tcp://localhost:" + container.portStomp).
-			WithInitialReconnectDelay(time.Second).
-			WithMaxReconnectDelay(time.Second * 2).
-			Build()),
-		WithLogger(newTestLogger(t)),
-	}
+	fo := WithFailover(failover.New().
+		Add("tcp://localhost:" + container.portStomp).
+		WithInitialReconnectDelay(time.Second).
+		WithMaxReconnectDelay(time.Second * 2).
+		Build())
 
-	consumer, err := New(ctx, opts...)
+	consumer, err := New(ctx,
+		fo,
+		WithLogger(newTestLogger(t, "consumer")),
+	)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
 	defer consumer.Close(ctx)
 
-	producer, err := New(ctx, opts...)
+	producer, err := New(ctx,
+		fo,
+		WithLogger(newTestLogger(t, "producer")),
+	)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
@@ -153,22 +156,25 @@ func TestLostMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	opts := []Option{
-		WithFailover(failover.New().
-			Add("tcp://localhost:" + container.portStomp).
-			WithInitialReconnectDelay(time.Second).
-			WithMaxReconnectDelay(time.Second * 2).
-			Build()),
-		WithLogger(newTestLogger(t)),
-	}
+	fo := WithFailover(failover.New().
+		Add("tcp://localhost:" + container.portStomp).
+		WithInitialReconnectDelay(time.Second).
+		WithMaxReconnectDelay(time.Second * 2).
+		Build())
 
-	consumer, err := New(ctx, opts...)
+	consumer, err := New(ctx,
+		fo,
+		WithLogger(newTestLogger(t, "consumer")),
+	)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
 	defer consumer.Close(ctx)
 
-	producer, err := New(ctx, opts...)
+	producer, err := New(ctx,
+		fo,
+		WithLogger(newTestLogger(t, "producer")),
+	)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
@@ -248,22 +254,25 @@ func TestRetries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	opts := []Option{
-		WithFailover(failover.New().
-			Add("tcp://localhost:" + container.portStomp).
-			WithInitialReconnectDelay(time.Second).
-			WithMaxReconnectDelay(time.Second * 2).
-			Build()),
-		WithLogger(newTestLogger(t)),
-	}
+	fo := WithFailover(failover.New().
+		Add("tcp://localhost:" + container.portStomp).
+		WithInitialReconnectDelay(time.Second).
+		WithMaxReconnectDelay(time.Second * 2).
+		Build())
 
-	consumer, err := New(ctx, opts...)
+	consumer, err := New(ctx,
+		fo,
+		WithLogger(newTestLogger(t, "consumer")),
+	)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
 	defer consumer.Close(ctx)
 
-	producer, err := New(ctx, opts...)
+	producer, err := New(ctx,
+		fo,
+		WithLogger(newTestLogger(t, "producer")),
+	)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
@@ -322,24 +331,27 @@ func TestDiversify(t *testing.T) {
 
 	ctx := context.Background()
 
-	opts := []Option{
-		WithFailover(failover.New().
-			Add("tcp://localhost:" + container1.portStomp).
-			Add("tcp://localhost:" + portStomp2).
-			WithRandomize(false).
-			WithInitialReconnectDelay(time.Second).
-			WithMaxReconnectDelay(time.Second * 2).
-			Build()),
-		WithLogger(newTestLogger(t)),
-	}
+	fo := WithFailover(failover.New().
+		Add("tcp://localhost:" + container1.portStomp).
+		Add("tcp://localhost:" + portStomp2).
+		WithRandomize(false).
+		WithInitialReconnectDelay(time.Second).
+		WithMaxReconnectDelay(time.Second * 2).
+		Build())
 
-	consumer, err := New(ctx, opts...)
+	consumer, err := New(ctx,
+		fo,
+		WithLogger(newTestLogger(t, "consumer")),
+	)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
 	defer consumer.Close(ctx)
 
-	producer, err := New(ctx, opts...)
+	producer, err := New(ctx,
+		fo,
+		WithLogger(newTestLogger(t, "producer")),
+	)
 	if !assert.NoError(t, err) {
 		t.Fatal()
 	}
@@ -370,6 +382,107 @@ func TestDiversify(t *testing.T) {
 	if !checkStatus(t, producer, StatusConnected) {
 		return
 	}
+}
+
+func TestPersistency(t *testing.T) {
+	container := runContainerActiveMQ(t, "test_amq", "", "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	fo := WithFailover(failover.New().
+		Add("tcp://localhost:" + container.portStomp).
+		WithInitialReconnectDelay(time.Second).
+		WithMaxReconnectDelay(time.Second * 2).
+		Build())
+
+	consumer, err := New(ctx,
+		fo,
+		WithLogger(newTestLogger(t, "consumer")),
+	)
+	if !assert.NoError(t, err) {
+		t.Fatal()
+	}
+	defer consumer.Close(ctx)
+
+	producer, err := New(ctx,
+		fo,
+		WithLogger(newTestLogger(t, "producer")),
+	)
+	if !assert.NoError(t, err) {
+		t.Fatal()
+	}
+	defer producer.Close(ctx)
+
+	if !checkStatus(t, consumer, StatusConnected) {
+		return
+	}
+	if !checkStatus(t, producer, StatusConnected) {
+		return
+	}
+
+	const wantAmountMessages = 100
+
+	ctxSend, cancelSend := context.WithCancel(ctx)
+	defer cancelSend()
+	ctxReceiver, cancelReceiver := context.WithCancel(ctx)
+	defer cancelReceiver()
+	var messages sync.Map
+
+	var (
+		sentMessages, receivedMessages int
+	)
+
+	// initialize a sender
+	go func() {
+		defer cancelSend()
+		ticker := time.NewTicker(time.Millisecond * 50)
+		for i := 0; i < wantAmountMessages; i++ {
+			msg := newRandomTestMessage()
+			if err := producer.Produce(ctx, msg); err != nil {
+				t.Log(err)
+				i--
+			} else {
+				messages.Store(msg.Message, struct{}{})
+				sentMessages++
+			}
+			select {
+			case <-ctxSend.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+
+	// initialize a receiver
+	go func() {
+		time.Sleep(time.Second)
+		if err := consumer.Consume(ctxReceiver, (*testMessage)(nil), func(ctx context.Context, got ConsumeMessage, headers Headers) error {
+			messages.Delete(got.(*testMessage).Message)
+			receivedMessages++
+			return nil
+		}); err != nil {
+			t.Log(err)
+		}
+	}()
+
+	time.Sleep(time.Second * 2)
+	container.Kill()
+	container.Start()
+
+	if !checkStatus(t, consumer, StatusConnected) {
+		return
+	}
+	if !checkStatus(t, producer, StatusConnected) {
+		return
+	}
+
+	<-ctxSend.Done()
+	time.Sleep(time.Microsecond * 900)
+	cancelReceiver()
+
+	t.Logf("sent: %d; received: %d; lost: %d", sentMessages, receivedMessages, sentMessages-receivedMessages)
+	assert.GreaterOrEqual(t, 10, sentMessages-receivedMessages)
 }
 
 func checkStatus(t *testing.T, amq *ActiveMQ, status Status) bool {

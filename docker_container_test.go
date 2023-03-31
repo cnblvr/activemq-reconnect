@@ -16,12 +16,13 @@ import (
 const imageName = "rmohr/activemq"
 
 type containerActiveMQ struct {
-	t                *testing.T
-	name             string
-	id               string
-	portStomp        string
-	portFrontend     string
-	schedulerSupport bool
+	t                  *testing.T
+	name               string
+	id                 string
+	portStomp          string
+	portFrontend       string
+	schedulerSupport   bool
+	persistentMessages bool
 }
 
 func (c *containerActiveMQ) Name() string         { return c.name }
@@ -133,6 +134,25 @@ func (c *containerActiveMQ) SetSchedulerSupport() bool {
 
 	if ok {
 		c.schedulerSupport = true
+	}
+
+	return ok
+}
+
+func (c *containerActiveMQ) SetPersistentMessages(persistent bool) bool {
+	if !assert.False(c.t, c.persistentMessages, "the container can't be set persistent attribute because it has been set") {
+		return false
+	}
+	const persistentPlace = `<broker xmlns="http://activemq.apache.org/schema/core"`
+	const journalPlace = `<kahaDB directory="${activemq.data}/kahadb"`
+	ok := c.changeConfiguration("activemq.xml", func(bts []byte) []byte {
+		bts = bytes.Replace(bts, []byte(persistentPlace), []byte(fmt.Sprintf(persistentPlace+" persistent=\"%t\"", persistent)), 1)
+		bts = bytes.Replace(bts, []byte(journalPlace), []byte(journalPlace+" journalMaxFileLength=\"32mb\""), 1)
+		return bts
+	})
+
+	if ok {
+		c.persistentMessages = true
 	}
 
 	return ok

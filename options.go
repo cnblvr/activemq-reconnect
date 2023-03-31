@@ -14,6 +14,7 @@ type options struct {
 	healthQueueName string
 	queueSuffix     string
 	connectionType  ConnectionType
+	notPersistent   bool
 }
 
 // options :: failover object
@@ -80,3 +81,11 @@ func WithConnectionType(connType ConnectionType) Option { return connectionTypeO
 type connectionTypeOption ConnectionType
 
 func (v connectionTypeOption) apply(o *options) { o.connectionType = ConnectionType(v) }
+
+// options :: not persistent
+
+func WithoutPersistentMessages() Option { return notPersistentMessagesOption{} }
+
+type notPersistentMessagesOption struct{}
+
+func (v notPersistentMessagesOption) apply(o *options) { o.notPersistent = true }
