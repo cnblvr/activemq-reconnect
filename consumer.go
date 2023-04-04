@@ -65,10 +65,13 @@ func (amq *ActiveMQ) Consume(ctx context.Context, messageNil ConsumeMessage, exe
 		if !ok {
 			return fmt.Errorf("subscription %q not found", queueName)
 		}
+		timerRefresh := time.NewTimer(time.Second * 5)
 		select {
 		case <-ctx.Done():
 			go amq.unsubscribe(ctx, queueName)
 			return nil
+		case <-timerRefresh.C:
+			continue
 		case stompMessage := <-sub.C:
 			if stompMessage == nil {
 				continue
@@ -94,8 +97,8 @@ func (amq *ActiveMQ) Consume(ctx context.Context, messageNil ConsumeMessage, exe
 			}
 			err := executeFn(ctx, message, udHeaders)
 			if err != nil {
-				if !amq.retryMessage(stompMessage, message, udHeaders) {
-					nackErr := amq.nack(stompMessage)
+				if !amq.retryMessage(ctx, stompMessage, message, udHeaders) {
+					nackErr := amq.nack(ctx, stompMessage)
 					if nackErr != nil {
 						amq.log.Errorf("message %q Nack error: %v. Orig error: %v", queueName, nackErr, err)
 					} else {
@@ -106,7 +109,7 @@ func (amq *ActiveMQ) Consume(ctx context.Context, messageNil ConsumeMessage, exe
 				// ack message because it was resent
 			}
 			if stompMessage.ShouldAck() {
-				ackErr := amq.ack(stompMessage)
+				ackErr := amq.ack(ctx, stompMessage)
 				if ackErr != nil {
 					amq.log.Errorf("message %q Ack error: %v", queueName, ackErr)
 				} else {
@@ -125,7 +128,7 @@ const (
 	amqScheduledDelayHeader = "AMQ_SCHEDULED_DELAY"
 )
 
-func (amq *ActiveMQ) retryMessage(stompMessage *stomp.Message, message ConsumeMessage, udHeaders Headers) bool {
+func (amq *ActiveMQ) retryMessage(ctx context.Context, stompMessage *stomp.Message, message ConsumeMessage, udHeaders Headers) bool {
 	var rp retryPolicy
 	if h := stompMessage.Header.Get(retryPolicyHeader); len(h) != 0 {
 		if err := rp.UnmarshalText([]byte(h)); err != nil {
@@ -158,7 +161,7 @@ func (amq *ActiveMQ) retryMessage(stompMessage *stomp.Message, message ConsumeMe
 	}
 	sendOpts = append(sendOpts, stomp.SendOpt.Header(retryNoHeader, strconv.Itoa(retryNo)))
 	sendOpts = append(sendOpts, stomp.SendOpt.Header(amqScheduledDelayHeader, strconv.FormatInt(rp.tryDelay.Milliseconds(), 10)))
-	if err := amq.send(stompMessage.Destination, stompMessage.ContentType, stompMessage.Body, sendOpts...); err != nil {
+	if err := amq.send(ctx, stompMessage.Destination, stompMessage.ContentType, stompMessage.Body, sendOpts...); err != nil {
 		amq.log.Errorf("failed to resend message %q", stompMessage.Destination)
 		return false
 	}

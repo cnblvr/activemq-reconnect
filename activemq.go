@@ -372,26 +372,65 @@ func (amq *ActiveMQ) withQueueSuffix(queueName string) string {
 	return fmt.Sprintf("%s_%s", queueName, amq.options.queueSuffix)
 }
 
-func (amq *ActiveMQ) ack(m *stomp.Message) error {
+func (amq *ActiveMQ) ack(ctx context.Context, m *stomp.Message) error {
 	if status := amq.getStatus(); status != StatusConnected {
 		return fmt.Errorf("failed to ack: connection has status %s", status)
 	}
-	return amq.conn.Ack(m)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*20)
+	defer cancel()
+	chErr := make(chan error)
+	go func() {
+		chErr <- amq.conn.Ack(m)
+	}()
+	select {
+	case <-ctx.Done():
+		err := ctx.Err()
+		amq.log.Errorf("Ack block error: %v", err)
+		return err
+	case err := <-chErr:
+		return err
+	}
 }
 
-func (amq *ActiveMQ) nack(m *stomp.Message) error {
+func (amq *ActiveMQ) nack(ctx context.Context, m *stomp.Message) error {
 	if status := amq.getStatus(); status != StatusConnected {
 		return fmt.Errorf("failed to nack: connection has status %s", status)
 	}
-	return amq.conn.Nack(m)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*20)
+	defer cancel()
+	chErr := make(chan error)
+	go func() {
+		chErr <- amq.conn.Nack(m)
+	}()
+	select {
+	case <-ctx.Done():
+		err := ctx.Err()
+		amq.log.Errorf("Nack block error: %v", err)
+		return err
+	case err := <-chErr:
+		return err
+	}
 }
 
-func (amq *ActiveMQ) send(destination string, contentType string, body []byte, opts ...func(*frame.Frame) error) error {
+func (amq *ActiveMQ) send(ctx context.Context, destination string, contentType string, body []byte, opts ...func(*frame.Frame) error) error {
 	if status := amq.getStatus(); status != StatusConnected {
 		return fmt.Errorf("failed to send: connection has status %s", status)
 	}
 	if !amq.options.notPersistent {
 		opts = append(opts, stomp.SendOpt.Header("persistent", "true"))
 	}
-	return amq.conn.Send(destination, contentType, body, opts...)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*20)
+	defer cancel()
+	chErr := make(chan error)
+	go func() {
+		chErr <- amq.conn.Send(destination, contentType, body, opts...)
+	}()
+	select {
+	case <-ctx.Done():
+		err := ctx.Err()
+		amq.log.Errorf("Send block error: %v", err)
+		return err
+	case err := <-chErr:
+		return err
+	}
 }
